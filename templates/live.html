@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Feed</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+        img {
+            border: 5px solid #990073;
+            border-radius: 10px;
+            width: 640px;
+            height: auto;
+        }
+        button {
+            padding: 10px 20px;
+            background-color: #990073;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div>
+        <h1>Live Feed</h1>
+        <video src="/live_feed" alt="Live Feed">
+        <br><br>
+        <button id="stopButton">Stop Server</button>
+    </div>
+    <script>
+        document.getElementById('stopButton').addEventListener('click', function() {
+            fetch('/stop', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        });
+    </script>
+</body>
+</html>
