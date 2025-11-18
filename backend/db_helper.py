@@ -1,154 +1,121 @@
 import mysql.connector
 from datetime import datetime
+from mysql.connector import Error
 
-# Create a connection to the database
-cnx = mysql.connector.connect(
-    host="localhost", 
-    user="root", 
-    password="Shashidabral410@", 
-    database="quizo"
-)
+def create_connection():
+    """Create and return a new MySQL connection."""
+    try:
+        conn = mysql.connector.connect(
+            host="caboose.proxy.rlwy.net",
+            port=47531,
+            user="root",
+            password="UaUKSJDpFWOmEtMbgKzwaqRSjvWiiIee",
+            database="railway"
+        )
+        if conn.is_connected():
+            print("[INFO] Connected to Railway MySQL successfully.")
+        return conn
+
+    except Error as e:
+        print("railway busy, switching to local DB")
+        try:
+            conn = mysql.connector.connect(
+                host="localhost",
+                user="root",
+                password="Shashidabral410@",
+                database="quizo"
+            )
+            if conn.is_connected():
+                print("[INFO] Connected to Local MySQL successfully.")
+            return conn
+        except Error as e2:
+            print("[ERROR] Both Railway & Local DB failed:", e2)
+            return None
+
+# Global connection
+cnx = create_connection()
 
 def log_with_timestamp(message):
     """Helper function to log messages with a timestamp."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open('report.txt', 'a') as file:
+    with open("report.txt", "a") as file:
         file.write(f"[{timestamp}] {message}\n")
 
 def get_all_details():
-    cursor = cnx.cursor()
-
-    query = "SELECT * FROM sign_up"
-    cursor.execute(query)
-
-    rows = cursor.fetchall()
-
-    log_with_timestamp("Fetched all sign-up details:")
-    for row in rows:
-        log_with_timestamp(f"{row}")
-    
-    cursor.close()
-
-def insert_signup(name, gender, dob, mobile, email, password):
+    """Fetch and log all users from the database."""
     try:
-        # Ensure the database connection is active
         if not cnx.is_connected():
             cnx.reconnect()
 
         cursor = cnx.cursor()
+        cursor.execute("SELECT * FROM users")  # ✅ fixed table name
+        rows = cursor.fetchall()
 
-        query = """
-        INSERT INTO sign_up (name, gender, dob, mobile, email, password)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        """
-        cursor.execute(query, (name, gender, dob, mobile, email, password))
+        log_with_timestamp("Fetched all sign-up details:")
+        for row in rows:
+            log_with_timestamp(f"{row}")
+
+        cursor.close()
+        print(f"[INFO] Retrieved {len(rows)} users successfully.")
+
+    except Error as e:
+        log_with_timestamp(f"[ERROR] Failed to fetch details: {e}")
+        print(f"[ERROR] Failed to fetch details: {e}")
+
+def insert_signup(username, email, password):
+    """Insert a new signup record."""
+    try:
+        if not cnx.is_connected():
+            cnx.reconnect()
+
+        cursor = cnx.cursor()
+        query = "INSERT INTO users (username, email, password) VALUES (%s, %s, %s)"
+        cursor.execute(query, (username, email, password))
         cnx.commit()
         cursor.close()
-        log_with_timestamp(f"Sign-Up data inserted successfully for {email}.")
-        print("Sign-Up data credentials inserted successfully!")    
+
+        log_with_timestamp(f"Inserted sign-up credentials for {email}")
+        print("[INFO] Sign-up data inserted successfully.")
         return 1
 
-    except mysql.connector.Error as err:
-        log_with_timestamp(f"Error inserting sign-up credentials for {email}: {err}")
-        cnx.rollback()
-        return -1
-    
-    except Exception as e:
-        log_with_timestamp(f"An unexpected error occurred during sign-up for {email}: {e}")
-        cnx.rollback()
+    except Error as err:
+        log_with_timestamp(f"[ERROR] Inserting credentials for {email}: {err}")
+        if cnx.is_connected():
+            cnx.rollback()
         return -1
 
 def search_login_credentials(email, password):
+    """Search user credentials and verify login."""
     try:
-        cursor = cnx.cursor()
+        if not cnx.is_connected():
+            cnx.reconnect()
 
-        # Modify the query to select the name and password
-        query = "SELECT name, email, password FROM sign_up WHERE email=%s AND password=%s"
+        cursor = cnx.cursor()
+        query = "SELECT email, password FROM users WHERE email=%s AND password=%s"
         cursor.execute(query, (email, password))
-        
         row = cursor.fetchone()
         cursor.close()
-        
-        if row:
-            name, email, _ = row
-            
-            # Get the current date and time
-            start_time = datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
 
-            # Store the start time in the database
-            cursor = cnx.cursor()
-            update_query = "UPDATE sign_up SET start_time = NOW() WHERE email = %s"
-            cursor.execute(update_query, (email,))
-            cnx.commit()
-            cursor.close()
-            
-            log_with_timestamp(f"Login successful for {email}. Start time recorded: {start_time}")
-            
-            text_to_write = f"Data found for {name}:\nEmail: {email}"
-            with open('report.txt', 'w') as file:
-                file.write(text_to_write)
-            
-            print("Login successful. Start time recorded:", start_time)
-            return {'username': name, 'message': 'Login successful'}
+        if not row:
+            log_with_timestamp(f"Login failed for {email}: No user found.")
+            print("[INFO] No matching user found.")
+            return False
+
+        searched_email, searched_password = row
+        if searched_email == email and searched_password == password:
+            log_with_timestamp(f"Login successful for {email}.")
+            print("[SUCCESS] Login successful!")
+            return True
         else:
-            log_with_timestamp(f"Login failed for {email}. No data found.")
-            print("No data found.")
-            return None
+            log_with_timestamp(f"Login failed for {email}: Incorrect password.")
+            print("[INFO] Incorrect credentials.")
+            return False
 
-    except mysql.connector.Error as err:
-        log_with_timestamp(f"Error during login process for {email}: {err}")
+    except Error as err:
+        log_with_timestamp(f"[ERROR] During login process for {email}: {err}")
+        print(f"[ERROR] Database error: {err}")
         return None
-
-    except Exception as e:
-        log_with_timestamp(f"An unexpected error occurred during login for {email}: {e}")
-        return None
-
-def save_score(email, score, total_questions, violations):
-    try:
-        cursor = cnx.cursor()
-
-        # Calculate percentage score
-        percentage = (score / total_questions) * 100
-
-        # Fetch the current time as the time_taken value
-        time_taken = datetime.now().strftime("%m/%d/%Y %I:%M:%S %p")
-
-        # Update the database with the final score, time taken, and violation scale
-        query = """
-        UPDATE sign_up 
-        SET total_score = %s, 
-            percentage = %s, 
-            time_taken = %s, 
-            violation_scale = %s, 
-            attempted = %s
-        WHERE email = %s
-        """
-        cursor.execute(query, (score, percentage, time_taken, violations, total_questions, email))
-        cnx.commit()
-        cursor.close()
-        log_with_timestamp(f"Score saved for {email}: {score}/{total_questions} ({percentage:.2f}%), Violations: {violations}")
-        print(f"Score for {email} saved successfully with a percentage of {percentage:.2f}%.")
-        return 1
-
-    except mysql.connector.Error as err:
-        log_with_timestamp(f"Error saving score for {email}: {err}")
-        cnx.rollback()
-        return -1
-    
-    except Exception as e:
-        log_with_timestamp(f"An unexpected error occurred while saving score for {email}: {e}")
-        cnx.rollback()
-        return -1
-
-# Example usage:
-# save_score('newuser@gmail.com', 5, 6, 2)
-
 
 if __name__ == "__main__":
     print("All Sign-Up Details:")
     get_all_details()
-    # Example usage:
-    # print(search_login_credentials('kumar1166@gmail.com', 'Krishna1'))
-    # insert_signup('New User', 'Male', '2000-01-01', '1234567890', 'newuser@gmail.com', 'newpassword')
-    # print("Updated Sign-Up Details:")
-    # get_all_details()

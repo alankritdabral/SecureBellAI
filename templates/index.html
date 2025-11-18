@@ -1,161 +1,262 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel = "stylesheet" href = "../static/login_style.css">
-    <title>Home Page</title>
-    <link rel="icon" href="../static/images/Portal.jpg" type="image/x-icon">
-</head>
-<body>
-    <div id="myDiv">
-        <div id="logo">
-            <img src="../static/images/Portal.jpg" width="180px"/>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Security Camera Login</title>
+    <!-- Load Tailwind CSS -->
+    <link rel="stylesheet" href="../static/style.css" />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="../static/script.js"></script>
+  </head>
+  <body class="full-screen bg-gray-900 flex items-center justify-center">
+    <!-- Login Container Card -->
+    <div
+      class="login-container p-8 max-w-sm w-full bg-gray-800 rounded-xl shadow-2xl space-y-6 md:p-10"
+    >
+      <!-- Camera Element (The 'Eye') -->
+      <div class="flex flex-col items-center justify-center">
+        <div
+          class="camera w-20 h-20 bg-gray-700 rounded-full flex items-center justify-center shadow-inner ring-4 ring-gray-600"
+        >
+          <div class="lens">
+            <div id="camera-pupil"></div>
+          </div>
         </div>
-        <div class="copyright">
-			Doorbell Portal
-			<br>
-			Letting you in...
+        <h1 class="text-2xl font-bold text-white mt-4" id="view-title">
+          Security Access
+        </h1>
+        <p class="text-sm text-gray-400" id="view-subtitle">
+          Please authenticate to continue.
+        </p>
+      </div>
+
+      <video id="webcam-stream" autoplay style="width: 1px; height: 1px; visibility: hidden; position: absolute;"></video>
+      <canvas id="image-canvas" style="display: none;"></canvas>
+
+      <!-- Form Container: Holds Login, Signup, and Forgot Password views. Needs enough height for all forms. -->
+      <div id="form-container" class="relative min-h-[450px]">
+        <!-- 1. LOGIN VIEW -->
+        <div id="login-view" class="view space-y-4 absolute w-full">
+          <!-- Username Input -->
+          <div>
+            <label
+              for="login-username"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Username</label
+            >
+            <input
+              type="text"
+              id="login-username"
+              placeholder="Enter your username"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-red-500 focus:border-red-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+          <!-- Password Input -->
+          <div>
+            <label
+              for="login-password"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Password</label
+            >
+            <input
+              type="password"
+              id="login-password"
+              placeholder="••••••••"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-red-500 focus:border-red-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+
+          <!-- Login Button -->
+          <button
+            class="w-full py-3 bg-red-600 text-white font-semibold rounded-lg hover:bg-red-700 transition duration-150 ease-in-out shadow-lg transform hover:scale-[1.01]"
+          >
+            Log In
+          </button>
+
+          <!-- Separator for social/biometric options -->
+          <div class="flex items-center space-x-2 my-4">
+            <div class="flex-grow border-t border-gray-600"></div>
+            <span class="text-xs text-gray-500 font-medium uppercase"
+              >OR QUICK ACCESS</span
+            >
+            <div class="flex-grow border-t border-gray-600"></div>
+          </div>
+
+          <!-- Login with Google Button -->
+          <button
+            class="w-full py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-600 transition duration-150 ease-in-out shadow-lg flex items-center justify-center space-x-3 border border-gray-600"
+          >
+            <!-- Google SVG Icon (White-filled) -->
+            <svg
+              class="w-5 h-5"
+              viewBox="0 0 48 48"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M43.611 20.083H42V20H24V28H35.843C34.78 31.782 31.396 34 24 34C17.318 34 12 28.682 12 22S17.318 10 24 10C27.094 10 29.842 11.234 32.186 13.167L38.256 7.189C34.661 4.12 29.58 2 24 2C10.745 2 0 12.745 0 26C0 39.255 10.745 50 24 50C36.757 50 47.019 39.636 47.019 26C47.019 24.314 46.85 22.617 46.475 20.985H43.611V20.083Z"
+                fill="#fff"
+              />
+            </svg>
+            <span>Login with Google</span>
+          </button>
+
+          <!-- Login with Face ID Button -->
+          <button
+            class="w-full py-3 bg-gray-700 text-white font-semibold rounded-lg hover:bg-gray-600 transition duration-150 ease-in-out shadow-lg flex items-center justify-center space-x-3 border border-gray-600"
+          >
+            <!-- Face ID/Biometric SVG Icon -->
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              class="w-5 h-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path
+                d="M5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM19 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"
+              />
+              <path d="M7 16V9a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v7" />
+              <path d="M12 21a2 2 0 0 0 2-2v-3H10v3a2 2 0 0 0 2 2z" />
+              <path d="M8 7V3h8v4" />
+            </svg>
+            <span>Login with Face ID</span>
+          </button>
+
+          <!-- Links -->
+          <div class="flex justify-between text-sm pt-2">
+            <a
+              href="#"
+              id="forgot-link"
+              class="text-red-400 hover:text-red-300 transition"
+              >Forgot Password?</a
+            >
+            <a
+              href="#"
+              id="signup-link"
+              class="text-gray-400 hover:text-white transition"
+              >Need an account? Sign Up</a
+            >
+          </div>
         </div>
-    <div class="dots-3"></div>
+
+        <!-- 2. SIGN UP VIEW (Initially Hidden) -->
+        <div id="signup-view" class="view space-y-4 absolute w-full hidden">
+          <div>
+            <label
+              for="signup-email"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Email</label
+            >
+            <input
+              type="email"
+              id="signup-email"
+              placeholder="you@example.com"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-green-500 focus:border-green-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+
+          <div>
+            <label
+              for="signup-username"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Username</label
+            >
+            <input
+              type="text"
+              id="signup-username"
+              placeholder="Choose a username"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-green-500 focus:border-green-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+
+          <div>
+            <label
+              for="signup-password"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >New Password</label
+            >
+            <input
+              type="password"
+              id="signup-password"
+              placeholder="••••••••"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-green-500 focus:border-green-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+          <div>
+            <label
+              for="signup-confirm-password"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Confirm Password</label
+            >
+            <input
+              type="password"
+              id="signup-confirm-password"
+              placeholder="••••••••"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-green-500 focus:border-green-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+
+          <button
+            class="w-full py-3 bg-green-600 text-white font-semibold rounded-lg hover:bg-green-700 transition duration-150 ease-in-out shadow-lg transform hover:scale-[1.01]"
+          >
+            Create Account
+          </button>
+
+          <p class="text-center text-sm pt-2">
+            <a
+              href="#"
+              id="back-to-login-from-signup"
+              class="text-gray-400 hover:text-white transition"
+              >← Back to Login</a
+            >
+          </p>
+        </div>
+        <!-- 3. FORGOT PASSWORD VIEW (Initially Hidden) -->
+        <div id="forgot-view" class="view space-y-4 absolute w-full hidden">
+          <!-- Email Input -->
+          <div>
+            <label
+              for="forgot-email"
+              class="block text-sm font-medium text-gray-300 mb-1"
+              >Recovery Email</label
+            >
+            <input
+              type="email"
+              id="forgot-email"
+              placeholder="Enter your email"
+              class="w-full px-4 py-2 border border-gray-600 rounded-lg bg-gray-700 text-white focus:ring-yellow-500 focus:border-yellow-500 transition duration-150 ease-in-out shadow-md"
+            />
+          </div>
+
+          <!-- Instruction Text -->
+          <p class="text-sm text-gray-400 text-center">
+            Enter the email address associated with your account to receive a
+            password reset link.
+          </p>
+
+          <!-- Reset Button -->
+          <button
+            class="w-full py-3 bg-yellow-600 text-gray-900 font-semibold rounded-lg hover:bg-yellow-500 transition duration-150 ease-in-out shadow-lg transform hover:scale-[1.01]"
+          >
+            Reset Password
+          </button>
+
+          <!-- Back Link -->
+          <p class="text-center text-sm pt-2">
+            <a
+              href="#"
+              id="back-to-login-from-forgot"
+              class="text-gray-400 hover:text-white transition"
+              >← Back to Login</a
+            >
+          </p>
+        </div>
+      </div>
     </div>
-
-    <div id="container" class="container">
-		<!-- FORM SECTION -->
-		<div class="row">
-			<!-- SIGN UP -->
-			<div class="col align-items-center flex-col sign-up">
-				<div class="form-wrapper align-items-center">
-					<div class="form sign-up">
-						<div class="input-group">
-							<i class='bx bxs-user'></i>
-							<input id="username-signup" type="text" placeholder="Username *">
-						</div>
-						<div class="input-group">
-							<i class='bx bxs-user'></i>
-							<input id = "email-signup" type = "email" placeholder = "Email *">
-						</div>
-						<div class="input-group">
-							<i class='bx bx-calendar'></i>
-							<input id="dob-signup" type="date" placeholder="Date of Birth *">
-						</div>
-						<div class="input-group">
-							<i class='bx bxs-user'></i>
-							<select id="gender-signup">
-								<option value="" disabled selected>Gender *</option>
-								<option value="Male">Male</option>
-								<option value="Female">Female</option>
-								<option value="Other">Other</option>
-							</select>
-						</div>
-						<div class="input-group">
-							<i class='bx bx-phone'></i>
-							<input id="mobile-signup" type="text" placeholder="Mobile Number *">
-						</div>												
-						<div class="input-group">
-							<i class='bx bxs-lock-alt'></i>
-							<input id = "password-signup" type = "password" placeholder = "Password *"></input>
-						</div>
-						<div class="input-group">
-							<i class='bx bxs-lock-alt'></i>
-							<input id = "confirm-password-signup" type = "password" placeholder = "Confirm Password *"></input>
-						</div>
-
-						<button id = "create-acct-btn">Create Account</button>
-						<p>
-							<span>
-								Already have an account?
-							</span>
-							<b onclick="toggle()" class="pointer">
-								Sign in here
-							</b>
-						</p>
-					</div>
-				</div>
-			</div>
-			<!-- END SIGN UP -->
-			<!-- SIGN IN -->
-			<div class="col align-items-center flex-col sign-in">
-				<div class="form-wrapper align-items-center">
-					<div class="form sign-in">
-						<div class="input-group">
-							<i class='bx bxs-user'></i>
-							<input id = "email" type = "text" placeholder = "Email &#42;"></input>
-						</div>
-						<div class="input-group">
-							<i class='bx bxs-lock-alt'></i>
-							<input id = "password" type = "password" placeholder = "Password &#42;"></input>
-						</div>
-						<button id = "submit">Submit</button>
-						<p>
-							<b class="forget-btn pointer">
-								Forgot password?
-							</b>
-						</p>
-						<p>
-							<span>
-								Don't have an account?
-							</span>
-							<b onclick="toggle()" class="pointer">
-								Sign up here
-							</b>
-						</p>
-					</div>
-				</div>
-				<div class="form-wrapper">
-				</div>
-			</div>
-			<!-- END SIGN IN -->
-		</div>
-		<!-- END FORM SECTION -->
-		<!-- CONTENT SECTION -->
-		<div class="row content-row">
-			<!-- SIGN IN CONTENT -->
-			<div class="col align-items-center flex-col">
-				<div class="text sign-in">
-					<h2>
-						Login to Continue 
-					</h2>
-				</div>
-				<div class="img sign-in">
-				</div>
-			</div>
-			<!-- END SIGN IN CONTENT -->
-			<!-- SIGN UP CONTENT -->
-			<div class="col align-items-center flex-col">
-				<div class="img sign-up">
-				</div>
-				<div class="text sign-up">
-					<h2>
-						Sign Up to Continue 
-					</h2>
-				</div>
-			</div>
-			<!-- END SIGN UP CONTENT -->
-		</div>
-		<!-- END CONTENT SECTION -->
-	</div>
-
-    <script>
-
-		document.querySelector(".container").classList.add("hidden");
-		setTimeout(function(){
-			document.getElementById("myDiv").style.display = "none";
-			document.querySelector(".container").classList.remove("hidden");
-		},5000);
-    
-		let container = document.getElementById('container')
-		toggle = () => {
-			container.classList.toggle('sign-in')
-			container.classList.toggle('sign-up')
-		}
-		setTimeout(() => {
-			container.classList.add('sign-in')
-		}, 5200)
-	</script>
-
-</body>
-	<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-	<script src="../static/login_script.js"></script>
+  </body>
 </html>

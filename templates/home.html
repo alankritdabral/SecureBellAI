@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Video Processor (Real-time Analysis)</title>
+<!-- Load Tailwind CSS -->
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  /* Custom styles for the drop area and feedback */
+  #drop-area {
+    @apply flex flex-col items-center justify-center p-8 border-4 border-dashed rounded-xl cursor-pointer transition duration-300 ease-in-out;
+    @apply border-gray-600 bg-gray-700 hover:border-indigo-500 hover:bg-gray-600;
+  }
+  #drop-area.highlight {
+    @apply border-indigo-500 bg-gray-600;
+  }
+  #file-input {
+    display: none; /* Hide the default file input */
+  }
+  .full-screen {
+    min-height: 100vh;
+  }
+  /* Feedback styling */
+  #feedback, #live-feedback {
+    @apply p-3 text-center rounded-lg font-medium;
+  }
+  #feedback.loading, #live-feedback.loading {
+    @apply bg-blue-900 text-blue-300;
+  }
+  #feedback.success, #live-feedback.success {
+    @apply bg-green-900 text-green-300;
+  }
+  #feedback.error, #live-feedback.error {
+    @apply bg-red-900 text-red-300;
+  }
+</style>
+</head>
+<body class="full-screen bg-gray-900 flex items-start justify-center p-4 font-sans">
+
+<main class="p-8 max-w-2xl w-full bg-gray-800 rounded-xl shadow-2xl space-y-6 md:p-10 mt-8">
+    <div class="flex flex-col items-center justify-center space-y-2">
+        <h1 class="text-3xl font-extrabold text-white tracking-tight">Real-time Video Processor</h1>
+        <p class="text-sm text-gray-400">Analyze uploaded videos or a live camera stream using a Flask backend.</p>
+    </div>
+
+    <!-- OPTION TOGGLE -->
+    <div class="flex justify-center space-x-4">
+        <button id="upload-mode-btn" class="py-2 px-4 rounded-lg font-semibold bg-indigo-700 text-white transition">
+            <span class="mr-1">📁</span> Upload Video Mode
+        </button>
+        <button id="live-mode-btn" class="py-2 px-4 rounded-lg font-semibold bg-gray-600 text-white hover:bg-indigo-600 transition">
+            <span class="mr-1">📹</span> Live Capture Mode
+        </button>
+    </div>
+
+    <!-- Upload Area (Initially visible) -->
+    <div id="upload-mode-container" class="space-y-6">
+        <label id="drop-area" for="file-input">
+            <p class="text-white text-center">
+                <span style="font-size: 32px;">📥</span><br>
+                <strong class="font-semibold text-xl mt-2 block">Drag and drop</strong> a video here<br>
+                <span class="text-gray-400">— OR —</span><br>
+                <strong class="font-semibold text-lg text-indigo-400 hover:text-indigo-300 transition">Click to select file</strong>
+            </p>
+            <p class="text-gray-400 text-xs mt-3">
+                <strong class="font-medium">Max file size: 50 MB</strong> | Accepted formats: MP4, MOV, etc.
+            </p>
+            <input type="file" id="file-input" accept="video/*">
+        </label>
+
+        <!-- Feedback Message Area for Upload -->
+        <div id="feedback"></div>
+
+        <!-- ANALYSIS BUTTON -->
+        <button id="analyze-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 transform hover:scale-[1.01] hidden disabled:opacity-50 disabled:cursor-not-allowed">
+            🎬 Start Video Analysis (File)
+        </button>
+    </div>
+    
+    <!-- Live Stream Area (Initially hidden) -->
+    <div id="live-mode-container" class="hidden space-y-4 pt-6">
+        <h2 class="text-xl font-bold text-white mb-2">Live Camera Feed</h2>
+        <div class="relative bg-black rounded-xl shadow-xl">
+            <!-- The video element to display the live feed -->
+            <video id="webcam-video" autoplay playsinline class="w-full h-auto rounded-lg"></video>
+            <!-- Canvas element to capture frames (hidden) -->
+            <canvas id="webcam-canvas" class="hidden"></canvas>
+        </div>
+        
+        <!-- LIVE ANALYSIS BUTTON -->
+        <button id="start-live-analysis-btn" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transition duration-300 disabled:opacity-50 disabled:cursor-not-allowed">
+            🔴 Start Live Frame Analysis
+        </button>
+        <div id="live-feedback"></div>
+    </div>
+
+    <!-- Area for Analysis Results (Images) -->
+    <div id="analysis-results" class="space-y-4 pt-6">
+        <!-- Images will be dynamically inserted here -->
+    </div>
+
+</main>
+
+<script>
+// --- Configuration Constants ---
+const MAX_SIZE_MB = 50;
+const MAX_SIZE_BYTES = MAX_SIZE_MB * 1024 * 1024;
+const VIDEO_MIME_REGEX = /^video\//;
+const CAPTURE_INTERVAL_MS = 500; // Send 2 frames per second (2 FPS)
+
+// Flask Endpoints
+const UPLOAD_ENDPOINT = '/upload-video'; 
+const ANALYSIS_ENDPOINT_SSE = '/analyze-video-stream'; 
+const LIVE_ANALYSIS_ENDPOINT = '/analyze-live-frame'; 
+const IMAGE_BASE_URL = '/processed-frames/'; 
+
+// --- DOM Elements ---
+const uploadModeContainer = document.getElementById('upload-mode-container');
+const liveModeContainer = document.getElementById('live-mode-container');
+
+const uploadModeBtn = document.getElementById('upload-mode-btn');
+const liveModeBtn = document.getElementById('live-mode-btn');
+
+const dropArea = document.getElementById('drop-area');
+const fileInput = document.getElementById('file-input');
+const feedback = document.getElementById('feedback');
+const analyzeBtn = document.getElementById('analyze-btn');
+
+const webcamVideo = document.getElementById('webcam-video');
+const webcamCanvas = document.getElementById('webcam-canvas');
+const liveFeedbackDiv = document.getElementById('live-feedback');
+const startLiveAnalysisBtn = document.getElementById('start-live-analysis-btn');
+
+const analysisResultsDiv = document.getElementById('analysis-results'); 
+
+// --- Global State ---
+let uploadedFileName = null;
+let eventSource = null; // To manage the SSE connection for uploaded files
+let receivedImages = []; // To store and sort images from either source
+let currentStream = null; // To hold the MediaStream object for webcam
+let captureInterval = null; // To hold the interval ID for live frame capture
+
+
+// --- Utility Functions ---
+
+function preventDefaults(e) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+/**
+ * Updates the feedback UI and controls the visibility of the analysis button.
+ */
+function updateFeedback(type, message, showAnalyzeBtn = false) {
+    feedback.className = type;
+    feedback.textContent = message;
+
+    if (showAnalyzeBtn) {
+        analyzeBtn.classList.remove('hidden');
+    } else {
+        analyzeBtn.classList.add('hidden');
+    }
+}
+
+/**
+ * Updates the feedback for the live analysis area.
+ */
+function updateLiveFeedback(type, message) {
+    liveFeedbackDiv.className = type;
+    liveFeedbackDiv.textContent = message;
+}
+
+/**
+ * Displays a single image and re-renders the overall grid to maintain sort order.
+ * @param {string} newFilename - The single image filename received from the server.
+ */
+function displayNewImage(newFilename) {
+    // 1. Add the new image to the array
+    if (!receivedImages.includes(newFilename)) {
+        receivedImages.push(newFilename);
+    }
+    
+    // 2. Sort the array. We rely on the filenames being numbered (frame_00001.jpg)
+    const sortedFilenames = [...receivedImages].sort((a, b) => {
+        const numA = parseInt(a.replace(/[^0-9]/g, ''), 10);
+        const numB = parseInt(b.replace(/[^0-9]/g, ''), 10);
+        return numA - numB;
+    });
+    
+    // 3. Re-render the entire list
+    analysisResultsDiv.innerHTML = ''; 
+
+    if (sortedFilenames.length > 0) {
+        // Add a heading
+        const title = document.createElement('h2');
+        title.className = 'text-xl font-bold text-white mb-4 border-b border-gray-700 pb-2';
+        title.textContent = `🖼️ Analysis Results (Live: ${sortedFilenames.length} Frames)`;
+        analysisResultsDiv.appendChild(title);
+
+        // Create a grid container
+        const imageGrid = document.createElement('div');
+        imageGrid.className = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4'; 
+
+        sortedFilenames.forEach(filename => {
+            const imageWrapper = document.createElement('div');
+            imageWrapper.className = 'overflow-hidden rounded-lg shadow-md bg-gray-700';
+            
+            const img = document.createElement('img');
+            img.src = IMAGE_BASE_URL + filename; 
+            img.alt = `Analysis result: ${filename}`;
+            img.className = 'w-full h-auto object-cover transition duration-300 hover:opacity-80';
+            img.loading = 'lazy'; 
+            
+            // Add filename caption
+            const caption = document.createElement('p');
+            caption.className = 'text-xs text-gray-400 p-1 truncate text-center';
+            caption.textContent = filename;
+
+            imageWrapper.appendChild(img);
+            imageWrapper.appendChild(caption);
+            imageGrid.appendChild(imageWrapper);
+        });
+
+        analysisResultsDiv.appendChild(imageGrid);
+    }
+}
+
+// ----------------------------------------------------------------------
+// ----------------------- FILE UPLOAD LOGIC ----------------------------
+// ----------------------------------------------------------------------
+
+/**
+ * Initiates the SSE connection for real-time video analysis of an uploaded file.
+ */
+function analyzeVideoFile() {
+    if (!uploadedFileName) {
+        updateFeedback('error', '❌ Error: No file has been successfully uploaded yet.', true);
+        return;
+    }
+    
+    // Disable the button during analysis
+    analyzeBtn.disabled = true;
+    updateFeedback('loading', `🔬 Starting streaming analysis for "${uploadedFileName}"...`, true);
+    analysisResultsDiv.innerHTML = ''; // Clear analysis results
+    receivedImages = []; // Reset images
+
+    // If an existing connection is open, close it
+    if (eventSource) {
+        eventSource.close();
+    }
+    
+    // 1. Construct the URL with the filename as a query parameter
+    const sseUrl = `${ANALYSIS_ENDPOINT_SSE}?filename=${uploadedFileName}`;
+    
+    // 2. Open the Server-Sent Events connection
+    eventSource = new EventSource(sseUrl);
+
+    eventSource.onopen = () => {
+        updateFeedback('loading', `🔬 Analysis stream connected. Processing frames...`, true);
+    };
+
+    eventSource.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+
+            if (data.status === 'image_available') {
+                updateFeedback('loading', `🖼️ Received frame: ${data.image_filename} (${receivedImages.length + 1} total)`, true);
+                displayNewImage(data.image_filename);
+            
+            } else if (data.status === 'complete') {
+                eventSource.close();
+                analyzeBtn.disabled = false;
+                updateFeedback('success', `✨ Analysis Complete: ${data.message} - Total frames: ${receivedImages.length}.`, true);
+            
+            } else if (data.status === 'error') {
+                eventSource.close();
+                analyzeBtn.disabled = false;
+                updateFeedback('error', `❌ Stream Error: ${data.message}`, true);
+            }
+        } catch (e) {
+             console.error("SSE message parsing error:", e, "Data:", event.data);
+             updateFeedback('error', `❌ Stream Error: Received unparsable data. See console for details.`, true);
+             analyzeBtn.disabled = false;
+             eventSource.close();
+        }
+    };
+
+    eventSource.onerror = (error) => {
+        console.error('SSE Error:', error);
+        
+        if (eventSource.readyState === EventSource.CLOSED) {
+             const finalMessage = feedback.textContent;
+             if (!finalMessage.includes('Complete')) {
+                 analyzeBtn.disabled = false;
+                 updateFeedback('error', `❌ Analysis Failed: Stream closed unexpectedly.`, true);
+             }
+        } else {
+            analyzeBtn.disabled = false;
+            updateFeedback('error', `❌ Analysis Failed: Stream connection error. See console.`, true);
+            eventSource.close();
+        }
+    };
+}
+
+
+/**
+ * Sends the valid file to the server using the Fetch API.
+ */
+async function uploadFile(file) {
+    const fileName = file.name;
+    updateFeedback('loading', `⏳ Uploading "${fileName}"... Please wait.`, false); 
+
+    const formData = new FormData();
+    formData.append('video_file', file);
+
+    try {
+        const response = await fetch(UPLOAD_ENDPOINT, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            let errorData = {};
+            try {
+                errorData = await response.json();
+            } catch (e) {
+                errorData.message = `Server responded with status ${response.status}.`;
+            }
+            updateFeedback('error', `❌ Upload Failed: ${errorData.message || 'An unknown server error occurred.'}`, false);
+            uploadedFileName = null;
+            return;
+        }
+
+        const data = await response.json(); 
+
+        if (data.status === 'success') {
+            uploadedFileName = data.filename; 
+            updateFeedback('success', `✅ Upload Complete: ${data.message} - Click 'Start Video Analysis (File)' below.`, true);
+            fileInput.value = ''; 
+        } else {
+            updateFeedback('error', `❌ Server Rejection: ${data.message}`, false);
+            uploadedFileName = null;
+            fileInput.value = '';
+        }
+
+    } catch (error) {
+        updateFeedback('error', `❌ Upload Failed: Network error. Check console for details.`, false);
+        uploadedFileName = null;
+        fileInput.value = '';
+    }
+}
+
+/**
+ * Performs client-side validation on the selected file.
+ */
+function validateAndUploadFile(file) {
+    updateFeedback('', '', false); 
+    uploadedFileName = null; 
+    analysisResultsDiv.innerHTML = '';
+    receivedImages = [];
+    dropArea.classList.remove('highlight');
+
+    // 1. Type Check
+    if (!VIDEO_MIME_REGEX.test(file.type)) {
+        updateFeedback('error', `❌ Error: Only video files are allowed. File type is ${file.type}.`, false);
+        fileInput.value = ''; 
+        return;
+    }
+
+    // 2. Size Check
+    if (file.size > MAX_SIZE_BYTES) {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        updateFeedback('error', `❌ Error: File size (${fileSizeMB} MB) exceeds the ${MAX_SIZE_MB} MB limit.`, false);
+        fileInput.value = ''; 
+        return;
+    }
+
+    // 3. Validation Success - Proceed to upload
+    uploadFile(file);
+}
+
+// ----------------------------------------------------------------------
+// ---------------------- LIVE CAPTURE LOGIC ----------------------------
+// ----------------------------------------------------------------------
+
+/**
+ * Stops the webcam stream and any running analysis.
+ */
+function stopWebcamStream() {
+    clearInterval(captureInterval);
+    captureInterval = null;
+    startLiveAnalysisBtn.textContent = '🔴 Start Live Frame Analysis';
+    startLiveAnalysisBtn.disabled = false;
+    
+    if (currentStream) {
+        currentStream.getTracks().forEach(track => track.stop());
+        currentStream = null;
+        webcamVideo.srcObject = null;
+    }
+}
+
+/**
+ * Starts the webcam stream and displays it in the video element.
+ */
+function startWebcamStream() {
+    stopWebcamStream(); // Ensure clean start
+    
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        // Use a small promise chain for robust error handling
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(function (stream) {
+                currentStream = stream;
+                webcamVideo.srcObject = stream;
+                webcamVideo.play();
+                updateLiveFeedback('success', '✅ Live stream active. Click the red button to start analysis.');
+                startLiveAnalysisBtn.disabled = false;
+            })
+            .catch(function (error) {
+                console.error("Error accessing the camera:", error);
+                updateLiveFeedback('error', '❌ Could not access camera. Check permissions.');
+                startLiveAnalysisBtn.disabled = true;
+            });
+    } else {
+        updateLiveFeedback('error', '❌ Camera access (getUserMedia) is not supported in this browser.');
+        startLiveAnalysisBtn.disabled = true;
+    }
+}
+
+/**
+ * Captures a single frame from the video element and sends it to the server.
+ */
+function sendFrameToServer() {
+    if (!currentStream || webcamVideo.paused || webcamVideo.ended) return;
+
+    // Set canvas dimensions to match video dimensions
+    webcamCanvas.width = webcamVideo.videoWidth;
+    webcamCanvas.height = webcamVideo.videoHeight;
+    
+    // Draw the current video frame onto the canvas
+    const context = webcamCanvas.getContext('2d');
+    context.drawImage(webcamVideo, 0, 0, webcamCanvas.width, webcamCanvas.height);
+
+    // Convert the canvas image to a JPEG base64 string
+    const frameDataURL = webcamCanvas.toDataURL('image/jpeg', 0.8); 
+
+    // Extract the Base64 data part (remove "data:image/jpeg;base64,")
+    const base64Data = frameDataURL.split(',')[1];
+
+    // Send the frame data to the Flask backend
+    fetch(LIVE_ANALYSIS_ENDPOINT, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ image_data: base64Data })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.status === 'success') {
+            updateLiveFeedback('loading', `🖼️ Sent and received processed frame: ${data.image_filename}`);
+            displayNewImage(data.image_filename); 
+        } else {
+            updateLiveFeedback('error', `⚠️ Server Processing Error: ${data.message}`);
+        }
+    })
+    .catch(error => {
+        console.error('Frame sending error:', error);
+        updateLiveFeedback('error', '❌ Network Error sending frame.');
+        // Stop the interval if a network error occurs
+        stopWebcamStream(); 
+        updateLiveFeedback('error', '❌ Live stream stopped due to network error.');
+    });
+}
+
+
+/**
+ * Toggles the live analysis on and off.
+ */
+function toggleLiveAnalysis() {
+    if (captureInterval) {
+        // Stop the analysis
+        clearInterval(captureInterval);
+        captureInterval = null;
+        startLiveAnalysisBtn.textContent = '🔴 Start Live Frame Analysis';
+        updateLiveFeedback('success', '⏹️ Live Frame Analysis Stopped. (Frames sent: ' + receivedImages.length + ')');
+    } else {
+        // Start the analysis
+        receivedImages = []; // Reset analysis results
+        analysisResultsDiv.innerHTML = '';
+        startLiveAnalysisBtn.textContent = '⏸️ Stop Live Analysis';
+        updateLiveFeedback('loading', '🔬 Starting real-time frame capture...');
+        
+        // Immediately capture the first frame, then set the interval
+        sendFrameToServer(); 
+        captureInterval = setInterval(sendFrameToServer, CAPTURE_INTERVAL_MS);
+    }
+}
+
+// ----------------------------------------------------------------------
+// -------------------------- MODE SWITCHING ----------------------------
+// ----------------------------------------------------------------------
+
+function setMode(mode) {
+    // 1. Reset common state and clear results
+    analysisResultsDiv.innerHTML = '';
+    receivedImages = [];
+    if (eventSource) { eventSource.close(); } // Close file SSE if running
+    updateFeedback('', '', false); // Clear upload feedback
+
+    if (mode === 'upload') {
+        liveModeContainer.classList.add('hidden');
+        uploadModeContainer.classList.remove('hidden');
+        uploadModeBtn.classList.remove('bg-gray-600', 'hover:bg-indigo-600');
+        uploadModeBtn.classList.add('bg-indigo-700');
+        liveModeBtn.classList.remove('bg-indigo-700');
+        liveModeBtn.classList.add('bg-gray-600', 'hover:bg-indigo-600');
+        stopWebcamStream(); // Ensure webcam is off
+        // Show analyze button if file was already uploaded
+        if (uploadedFileName) {
+            analyzeBtn.classList.remove('hidden');
+        }
+    } else if (mode === 'live') {
+        uploadModeContainer.classList.add('hidden');
+        liveModeContainer.classList.remove('hidden');
+        liveModeBtn.classList.remove('bg-gray-600', 'hover:bg-indigo-600');
+        liveModeBtn.classList.add('bg-indigo-700');
+        uploadModeBtn.classList.remove('bg-indigo-700');
+        uploadModeBtn.classList.add('bg-gray-600', 'hover:bg-indigo-600');
+        analyzeBtn.classList.add('hidden'); // Hide file analysis button
+        uploadedFileName = null; // Clear file context
+        startWebcamStream(); // Start webcam when switching to live mode
+    }
+}
+
+
+// --- Event Handlers for Drag-and-Drop and File Selection ---
+['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false); 
+});
+
+['dragenter', 'dragover'].forEach(eventName => {
+    dropArea.addEventListener(eventName, () => dropArea.classList.add('highlight'), false);
+});
+
+['dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, () => dropArea.classList.remove('highlight'), false);
+});
+
+dropArea.addEventListener('drop', handleDrop, false);
+
+function handleDrop(e) {
+    let dt = e.dataTransfer;
+    let files = dt.files;
+    if (files.length === 1) {
+        validateAndUploadFile(files[0]);
+    } else if (files.length > 1) {
+        updateFeedback('error', '❌ Error: Please drop only one file at a time.', false);
+    } else {
+        updateFeedback('error', '❌ Error: The dropped item was not recognized as a file.', false);
+    }
+}
+
+fileInput.addEventListener('change', handleFileSelect, false);
+
+function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (file) {
+        validateAndUploadFile(file);
+    }
+}
+
+// Event listener for the Analyze Button (File Mode)
+analyzeBtn.addEventListener('click', analyzeVideoFile);
+
+// Event listeners for mode switching
+uploadModeBtn.addEventListener('click', () => setMode('upload'));
+liveModeBtn.addEventListener('click', () => setMode('live'));
+
+// Event listener for the Live Analysis Button
+startLiveAnalysisBtn.addEventListener('click', toggleLiveAnalysis);
+
+// Initialize to Upload Mode
+window.onload = () => {
+    setMode('upload');
+};
+</script>
+
+</body>
+</html>
